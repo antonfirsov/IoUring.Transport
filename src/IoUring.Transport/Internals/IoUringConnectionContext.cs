@@ -1,6 +1,5 @@
 using System;
 using System.Buffers;
-using System.Diagnostics;
 using System.IO.Pipelines;
 using System.Net;
 using System.Runtime.InteropServices;
@@ -26,7 +25,6 @@ namespace IoUring.Transport.Internals
 
         private readonly iovec* _iovec;
         private GCHandle _iovecHandle;
-
 
         protected IoUringConnectionContext(LinuxSocket socket, EndPoint local, EndPoint remote, TransportThreadContext threadContext)
         {
@@ -79,14 +77,14 @@ namespace IoUring.Transport.Internals
         private void FlushedToApp(bool async)
         {
             var flushResult = FlushResult;
-            // TODO: handle result
-
-            var readHandles = ReadHandles;
-            readHandles[0].Dispose();
+            if (flushResult.IsCanceled || flushResult.IsFaulted)
+            {
+                DisposeAsync();
+                return;
+            }
 
             if (async)
             {
-                Debug.WriteLine($"Flushed to app for {(int)Socket} asynchronously");
                 _threadContext.ScheduleAsyncRead(Socket);
             }
         }
@@ -97,11 +95,14 @@ namespace IoUring.Transport.Internals
         private void ReadFromApp(bool async)
         {
             var readResult = ReadResult;
-            // TODO: handle result
+            if (readResult.IsCanceled || readResult.IsFaulted)
+            {
+                DisposeAsync();
+                return;
+            }
 
             if (async)
             {
-                Debug.WriteLine($"Read from app for {(int)Socket} asynchronously");
                 _threadContext.ScheduleAsyncWrite(Socket);
             }
         }
@@ -111,7 +112,9 @@ namespace IoUring.Transport.Internals
 
         public override ValueTask DisposeAsync()
         {
-            // TODO: close pipes?
+            Socket.Close();
+            // TODO: close pipes
+            // TODO: close socket fd
             if (_iovecHandle.IsAllocated)
                 _iovecHandle.Free();
 

@@ -1,5 +1,5 @@
+using System;
 using System.Buffers;
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -11,17 +11,19 @@ namespace IoUring.Transport.Internals
     {
         private const int True = 1;
         private const int False = 0;
-        
+
         private readonly int _eventFd;
-        private readonly ConcurrentQueue<ulong> _asyncOperationQueue;
+        private readonly Action<int> _readAction;
+        private readonly Action<int> _writeAction;
         private int _blockingMode;
 
-        public TransportThreadContext(IoUringOptions options, MemoryPool<byte> memoryPool, int eventFd, ConcurrentQueue<ulong> asyncOperationQueue)
+        public TransportThreadContext(IoUringOptions options, MemoryPool<byte> memoryPool, int eventFd, Action<int> readAction, Action<int> writeAction)
         {
             Options = options;
             MemoryPool = memoryPool;
             _eventFd = eventFd;
-            _asyncOperationQueue = asyncOperationQueue;
+            _readAction = readAction;
+            _writeAction = writeAction;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -61,13 +63,15 @@ namespace IoUring.Transport.Internals
 
         public void ScheduleAsyncRead(int socket)
         {
-            _asyncOperationQueue.Enqueue(TransportThread.Mask(socket, TransportThread.ReadMask));
+            Debug.WriteLine($"Wrote to app asynchronously for {socket}");
+            _readAction(socket);
             Notify();
         }
 
         public void ScheduleAsyncWrite(int socket)
         {
-            _asyncOperationQueue.Enqueue(TransportThread.Mask(socket, TransportThread.WriteMask));
+            Debug.WriteLine($"Read from app asynchronously for {socket}");
+            _writeAction(socket);
             Notify();
         }
     }
